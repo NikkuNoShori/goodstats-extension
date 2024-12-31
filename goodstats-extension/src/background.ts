@@ -30,27 +30,59 @@ let syncState: SyncState = {
   session: null
 };
 
-// Listen for auth messages from the website
-window.addEventListener('message', async (event) => {
-  // Only accept messages from our website
-  if (!event.origin.includes(BASE_URL)) return;
+// Listen for messages from popup or content scripts
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CHECK_AUTH_STATUS') {
+    updateExtensionState();
+  }
   
-  if (event.data.type === 'GOODSTATS_AUTH_STATUS') {
-    console.log('Received auth status:', event.data);
-    if (event.data.authenticated) {
+  if (message.type === 'GOODSTATS_AUTH_UPDATE') {
+    console.log('Background received auth update:', message.data);
+    if (message.data.authenticated) {
       syncState.goodstatsAuth = true;
       syncState.session = {
-        accessToken: event.data.accessToken,
-        refreshToken: event.data.refreshToken,
-        expiresAt: event.data.expiresAt,
-        userId: event.data.userId,
-        email: event.data.email
+        accessToken: message.data.accessToken,
+        refreshToken: message.data.refreshToken,
+        expiresAt: message.data.expiresAt,
+        userId: message.data.userId,
+        email: message.data.email
       };
     } else {
       syncState.goodstatsAuth = false;
       syncState.session = null;
     }
     updateExtensionState();
+  }
+  
+  if (message.type === 'SYNC_BOOKS' && syncState.goodreadsTabId) {
+    syncState.syncStatus = 'syncing';
+    syncState.lastError = null;
+    updateExtensionState();
+    
+    chrome.tabs.sendMessage(syncState.goodreadsTabId, { 
+      type: 'START_SYNC',
+      goodstatsUrl: BASE_URL,
+      session: syncState.session
+    });
+  }
+
+  if (message.type === 'SYNC_COMPLETE') {
+    syncState.syncStatus = 'success';
+    updateExtensionState();
+  }
+
+  if (message.type === 'SYNC_ERROR') {
+    syncState.syncStatus = 'error';
+    syncState.lastError = message.error;
+    updateExtensionState();
+  }
+
+  if (message.type === 'ACTIVATE_GOODREADS') {
+    if (syncState.goodreadsTabId) {
+      chrome.tabs.update(syncState.goodreadsTabId, { active: true });
+    } else {
+      chrome.tabs.create({ url: GOODREADS_URL });
+    }
   }
 });
 
@@ -90,30 +122,10 @@ async function checkGoodstatsAuth(): Promise<boolean> {
       }
     }
     
-    // Fall back to session check
-    const response = await fetch(`${BASE_URL}/api/auth/check`, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
-    }
-
-    const data = await response.json();
-    syncState.goodstatsAuth = data.authenticated;
-    if (data.authenticated && data.session) {
-      syncState.session = {
-        accessToken: data.session.accessToken,
-        refreshToken: data.session.refreshToken,
-        expiresAt: data.session.expiresAt,
-        userId: data.session.userId,
-        email: data.session.email
-      };
-    }
-    return syncState.goodstatsAuth;
+    // If no valid session or refresh failed, we're not authenticated
+    syncState.goodstatsAuth = false;
+    syncState.session = null;
+    return false;
   } catch (error) {
     console.error('Error checking Goodstats auth:', error);
     return false;
@@ -167,43 +179,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     // If both services are authenticated, notify that we can sync
     if (syncState.goodstatsAuth && syncState.goodreadsAuth) {
       chrome.tabs.sendMessage(tabId, { type: 'READY_TO_SYNC' });
-    }
-  }
-});
-
-// Listen for messages from popup or content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'CHECK_AUTH_STATUS') {
-    updateExtensionState();
-  }
-  
-  if (message.type === 'SYNC_BOOKS' && syncState.goodreadsTabId) {
-    syncState.syncStatus = 'syncing';
-    syncState.lastError = null;
-    updateExtensionState();
-    
-    chrome.tabs.sendMessage(syncState.goodreadsTabId, { 
-      type: 'START_SYNC',
-      goodstatsUrl: BASE_URL
-    });
-  }
-
-  if (message.type === 'SYNC_COMPLETE') {
-    syncState.syncStatus = 'success';
-    updateExtensionState();
-  }
-
-  if (message.type === 'SYNC_ERROR') {
-    syncState.syncStatus = 'error';
-    syncState.lastError = message.error;
-    updateExtensionState();
-  }
-
-  if (message.type === 'ACTIVATE_GOODREADS') {
-    if (syncState.goodreadsTabId) {
-      chrome.tabs.update(syncState.goodreadsTabId, { active: true });
-    } else {
-      chrome.tabs.create({ url: GOODREADS_URL });
     }
   }
 });

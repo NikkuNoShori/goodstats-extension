@@ -1,17 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "goodstats",
-  "version": "1.0.0",
-  "description": "Track and analyze your browsing statistics",
+  "name": "Goodstats Extension",
+  "version": "1.0",
+  "description": "Sync your Goodreads data with Goodstats",
   "permissions": [
-    "storage",
     "activeTab",
     "scripting",
-    "tabs",
-    "cookies"
+    "tabs"
   ],
   "host_permissions": [
-    "*://*/*"
+    "https://www.goodreads.com/*",
+    "https://goodstats.vercel.app/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.goodreads.com/*",
+        "https://goodstats.vercel.app/*"
+      ],
+      "js": ["content.js"]
+    }
   ],
   "action": {
     "default_popup": "popup.html",
@@ -29,13 +37,6 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": ["*://*.goodreads.com/*"],
-      "js": ["content.js"]
-    }
-  ]
+    "service_worker": "background.js"
+  }
 } 

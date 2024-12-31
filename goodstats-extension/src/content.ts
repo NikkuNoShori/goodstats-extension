@@ -1,5 +1,60 @@
 // Content script for Goodreads page
-console.log('Goodreads content script loaded');
+console.log('Content script loaded for:', window.location.hostname);
+
+// Listen for auth messages from the website
+window.addEventListener('message', (event) => {
+  // Only accept messages from our website
+  if (!event.origin.includes('goodstats.vercel.app')) return;
+  
+  console.log('Content script received message:', event.data);
+  
+  if (event.data.type === 'GOODSTATS_AUTH_STATUS') {
+    console.log('Content script received auth status:', event.data);
+    // Forward the message to background script
+    chrome.runtime.sendMessage({
+      type: 'GOODSTATS_AUTH_UPDATE',
+      data: event.data
+    });
+  }
+});
+
+// If we're on Goodstats, inject a script to trigger auth status check
+if (window.location.hostname === 'goodstats.vercel.app') {
+  console.log('On Goodstats website, checking auth status');
+  // Create and inject the script
+  const script = document.createElement('script');
+  script.textContent = `
+    // Function to send auth status
+    function sendAuthStatus() {
+      const user = window.__NEXT_DATA__?.props?.pageProps?.user;
+      const session = window.__NEXT_DATA__?.props?.pageProps?.session;
+      
+      console.log('Checking auth status:', { user, session });
+      
+      if (user && session) {
+        window.postMessage({
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: true,
+          ...session,
+          userId: user.id,
+          email: user.email
+        }, '*');
+      } else {
+        window.postMessage({
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: false
+        }, '*');
+      }
+    }
+
+    // Send status immediately
+    sendAuthStatus();
+
+    // Also send status when route changes
+    window.addEventListener('routeChangeComplete', sendAuthStatus);
+  `;
+  (document.head || document.documentElement).appendChild(script);
+}
 
 interface Book {
   title: string;
