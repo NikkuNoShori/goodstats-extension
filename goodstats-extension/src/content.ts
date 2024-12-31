@@ -1,68 +1,167 @@
 // Content script for Goodreads page
 console.log('Content script loaded for:', window.location.hostname);
 
-// Function to check auth status by looking for user-specific elements
+// Function to check Goodreads login state
+function checkGoodreadsLogin() {
+  // Check for elements that indicate logged-in state on Goodreads
+  const signedInElements = document.querySelector('.siteHeader__personal');
+  const signOutLink = document.querySelector('a[href*="sign_out"]');
+  const userShelf = document.querySelector('.userShelf');
+  
+  const isLoggedIn = !!(signedInElements || signOutLink || userShelf);
+  console.log('Goodreads login check:', { 
+    isLoggedIn,
+    elements: {
+      header: !!signedInElements,
+      signOut: !!signOutLink,
+      shelf: !!userShelf
+    }
+  });
+  
+  return isLoggedIn;
+}
+
+// Function to send combined status update
+function sendStatusUpdate(goodstatsAuth: boolean, goodreadsData?: { isLoggedIn: boolean }) {
+  console.log('Sending combined status update:', {
+    goodstatsAuthenticated: goodstatsAuth,
+    goodreadsLoggedIn: goodreadsData?.isLoggedIn
+  });
+  
+  chrome.runtime.sendMessage({
+    type: 'STATUS_UPDATE',
+    data: {
+      goodstatsAuthenticated: goodstatsAuth,
+      goodreads: goodreadsData
+    }
+  }, response => {
+    console.log('Combined status update response:', response);
+  });
+}
+
+// Function to check auth status by looking for Supabase auth token
 function checkAuthStatus() {
   try {
-    // Look for elements that indicate auth state
-    const userDashboard = document.querySelector('[data-testid="user-dashboard"]');
-    const userProfileSection = document.querySelector('[data-testid="user-profile-section"]');
-    const connectGoodreads = document.querySelector('[data-testid="connect-goodreads"]');
-    const syncBooksButton = document.querySelector('[data-testid="sync-books-button"]');
-    const userBookList = document.querySelector('[data-testid="user-book-list"]');
+    console.log('=== Starting Auth Check ===');
+    console.log('Current URL:', window.location.href);
     
-    // If dashboard exists, user is logged in
-    const isLoggedIn = !!userDashboard;
-    console.log('Auth check by DOM:', { 
-      isLoggedIn,
-      hasProfile: !!userProfileSection,
-      needsGoodreads: !!connectGoodreads,
-      canSync: !!syncBooksButton,
-      hasBooks: !!userBookList
+    // Log all localStorage keys for debugging
+    const allKeys = Object.keys(localStorage);
+    console.log('All localStorage keys:', allKeys);
+    
+    // Look for Supabase auth token in localStorage
+    const supabaseAuthKey = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
+    console.log('Found Supabase auth key:', supabaseAuthKey);
+    
+    if (!supabaseAuthKey) {
+      console.log('❌ No Supabase auth token found in localStorage');
+      sendStatusUpdate(false);
+      return;
+    }
+
+    // Parse the auth data
+    const rawAuthData = localStorage.getItem(supabaseAuthKey);
+    console.log('Raw auth data exists:', !!rawAuthData);
+    
+    const authData = JSON.parse(rawAuthData || '{}');
+    console.log('Auth data parsed successfully:', {
+      hasAccessToken: !!authData.access_token,
+      accessTokenLength: authData.access_token?.length,
+      hasRefreshToken: !!authData.refresh_token,
+      expiresAt: new Date(authData.expires_at * 1000).toLocaleString(),
+      hasUser: !!authData.user,
+      userId: authData.user?.id,
+      email: authData.user?.email ? '✓ Present' : '✗ Missing'
     });
-    
-    if (isLoggedIn) {
+
+    if (authData.access_token && authData.user) {
+      console.log('✅ Valid auth data found, sending authenticated status');
+      sendStatusUpdate(true);
+      
+      // After confirming Goodstats auth, check Goodreads status
       chrome.runtime.sendMessage({
-        type: 'GOODSTATS_AUTH_UPDATE',
-        data: {
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: true,
-          hasGoodreadsConnection: !!userProfileSection,
-          needsGoodreadsConnection: !!connectGoodreads,
-          canSyncBooks: !!syncBooksButton,
-          hasBooks: !!userBookList
-        }
+        type: 'CHECK_GOODREADS_STATUS'
+      }, response => {
+        console.log('Requested Goodreads status check:', response);
       });
     } else {
-      chrome.runtime.sendMessage({
-        type: 'GOODSTATS_AUTH_UPDATE',
-        data: {
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: false
-        }
+      console.log('❌ Auth data incomplete:', {
+        hasAccessToken: !!authData.access_token,
+        hasUser: !!authData.user
       });
+      sendStatusUpdate(false);
     }
+    console.log('=== Auth Check Complete ===');
   } catch (error) {
-    console.error('Error checking auth status:', error);
+    console.error('❌ Error checking auth status:', error);
+    console.error('Error details:', {
+      name: error instanceof Error ? error.name : 'Unknown',
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : 'No stack trace'
+    });
+    sendStatusUpdate(false);
   }
 }
 
-// If we're on Goodstats, check auth status
+// Check auth status based on hostname
 if (window.location.hostname === 'goodstats.vercel.app') {
   console.log('On Goodstats website, checking auth status');
   
-  // Initial check after a short delay to let the page load
+  // Check immediately for existing login
+  checkAuthStatus();
+  
+  // Also check after a delay in case page is still loading
   setTimeout(checkAuthStatus, 1000);
   
-  // Also check when URL changes (for client-side navigation)
+  // Watch for auth token changes in localStorage
+  window.addEventListener('storage', (e) => {
+    if (e.key?.startsWith('sb-') && e.key?.endsWith('-auth-token')) {
+      console.log('Auth token changed, rechecking status');
+      checkAuthStatus();
+    }
+  });
+  
+  // Watch for localStorage changes in the same window
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = function(key, value) {
+    originalSetItem.apply(this, [key, value]);
+    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      console.log('Auth token updated in current window, rechecking status');
+      checkAuthStatus();
+    }
+  };
+  
+  // Also check when URL changes
   let lastUrl = window.location.href;
   new MutationObserver(() => {
     if (lastUrl !== window.location.href) {
       lastUrl = window.location.href;
       console.log('URL changed, checking auth status');
-      setTimeout(checkAuthStatus, 1000);
+      checkAuthStatus();
     }
   }).observe(document, { subtree: true, childList: true });
+  
+  // Recheck periodically
+  setInterval(checkAuthStatus, 5000);
+} else if (window.location.hostname === 'www.goodreads.com') {
+  console.log('On Goodreads website, checking login status');
+  
+  // Check Goodreads login state periodically
+  const checkGoodreadsState = () => {
+    const isLoggedIn = checkGoodreadsLogin();
+    sendStatusUpdate(true, { isLoggedIn });
+  };
+  
+  // Initial check after page load
+  setTimeout(checkGoodreadsState, 1000);
+  
+  // Recheck periodically
+  setInterval(checkGoodreadsState, 5000);
+  
+  // Check when DOM changes
+  new MutationObserver(() => {
+    checkGoodreadsState();
+  }).observe(document.body, { subtree: true, childList: true });
 }
 
 interface Book {
