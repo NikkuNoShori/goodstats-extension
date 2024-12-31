@@ -84,7 +84,7 @@ const LandingPage: React.FC = () => {
 
   return (
     <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header isLandingPage title="GoodStats" />
+      <Header isLandingPage title={''} />
       {/* Hero Section */}
       <Box
         sx={{

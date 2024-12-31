@@ -55,6 +55,16 @@ const SignInPage = () => {
       }
 
       if (data.user) {
+        // Send token to extension if installed
+        try {
+          const extensionId = 'YOUR_EXTENSION_ID'; // Get this from chrome://extensions
+          chrome.runtime.sendMessage(extensionId, {
+            type: 'setToken',
+            token: data.session?.access_token
+          });
+        } catch (err) {
+          // Extension not installed, ignore
+        }
         navigate('/dashboard');
       }
     } catch (err) {
@@ -87,7 +97,7 @@ const SignInPage = () => {
 
   return (
     <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header showBreadcrumbs={false} title="" />
+      <Header title="Sign In" showBreadcrumbs={false} />
       
       <Box 
         sx={{ 
@@ -118,18 +128,6 @@ const SignInPage = () => {
             width: '100%',
             maxWidth: 400,
           }}>
-            <Typography 
-              variant="h4" 
-              sx={{ 
-                color: 'white',
-                textAlign: 'center',
-                mb: 3,
-                fontWeight: 'bold'
-              }}
-            >
-              Sign In
-            </Typography>
-
             {error && (
               <Alert 
                 severity="error" 
@@ -146,15 +144,10 @@ const SignInPage = () => {
                   fullWidth
                   label="Email"
                   type="email"
-                  name="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLoading}
-                  autoComplete="email"
-                  inputProps={{
-                    autoComplete: "email"
-                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -180,15 +173,11 @@ const SignInPage = () => {
                   fullWidth
                   label="Password"
                   type="password"
-                  name="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   disabled={isLoading}
-                  autoComplete="chrome-off"
-                  inputProps={{
-                    autoComplete: "chrome-off"
-                  }}
+                  autoComplete="new-password"
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'rgba(255, 255, 255, 0.05)',

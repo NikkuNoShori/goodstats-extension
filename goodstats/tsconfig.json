@@ -22,11 +22,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": [
-    "src/**/*",
-    "app/**/*",
-    "netlify/**/*",
-    "vite.config.ts"
-  ],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src/**/*"]
 } 

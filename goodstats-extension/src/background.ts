@@ -1,6 +1,6 @@
 // Background script
 const DEV_MODE = true;
-const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.app';
+const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.vercel.app';
 const GOODREADS_URL = 'https://www.goodreads.com';
 
 // Track states
