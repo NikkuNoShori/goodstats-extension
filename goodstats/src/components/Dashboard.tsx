@@ -23,18 +23,42 @@ const Dashboard = () => {
   useEffect(() => {
     const reportLoginStatus = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await fetch(`${env.app.url}/api/auth/check`, {
-            method: 'POST',
-            credentials: 'include',
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const response = await fetch('/api/auth/check', {
+            method: 'GET',
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
             }
           });
+
+          if (response.ok) {
+            // Send message to extension
+            window.postMessage({
+              type: 'GOODSTATS_AUTH_STATUS',
+              data: {
+                authenticated: true,
+                session: {
+                  access_token: session.access_token,
+                  expires_at: session.expires_at,
+                  refresh_token: session.refresh_token
+                }
+              }
+            }, '*');
+          }
+        } else {
+          window.postMessage({
+            type: 'GOODSTATS_AUTH_STATUS',
+            data: { authenticated: false }
+          }, '*');
         }
       } catch (err) {
         console.error('Failed to report login status:', err);
+        window.postMessage({
+          type: 'GOODSTATS_AUTH_STATUS',
+          data: { authenticated: false }
+        }, '*');
       }
     };
     reportLoginStatus();

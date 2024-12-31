@@ -11,19 +11,33 @@ interface Book {
   shelf: string;
 }
 
+interface SessionInfo {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  email: string;
+}
+
+interface SyncMessage {
+  type: 'START_SYNC' | 'READY_TO_SYNC';
+  goodstatsUrl?: string;
+  session?: SessionInfo;
+}
+
 // Listen for messages from background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: SyncMessage, sender, sendResponse) => {
   if (message.type === 'READY_TO_SYNC') {
     // Show sync prompt to user
     showSyncPrompt();
   }
 
-  if (message.type === 'START_SYNC') {
-    startSync(message.goodstatsUrl);
+  if (message.type === 'START_SYNC' && message.goodstatsUrl && message.session) {
+    startSync(message.goodstatsUrl, message.session);
   }
 });
 
-async function startSync(goodstatsUrl: string) {
+async function startSync(goodstatsUrl: string, session: SessionInfo) {
   try {
     // Get all books from the current page
     const books = await scrapeBooks();
@@ -33,12 +47,51 @@ async function startSync(goodstatsUrl: string) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.accessToken}`
       },
-      credentials: 'include',
       body: JSON.stringify({ books })
     });
 
     if (!response.ok) {
+      // If unauthorized, try to refresh the token
+      if (response.status === 401) {
+        try {
+          const refreshResponse = await fetch(`${goodstatsUrl}/api/auth/refresh`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ refreshToken: session.refreshToken })
+          });
+
+          if (refreshResponse.ok) {
+            const newSession = await refreshResponse.json();
+            // Retry with new token
+            const retryResponse = await fetch(`${goodstatsUrl}/api/books/sync`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${newSession.accessToken}`
+              },
+              body: JSON.stringify({ books })
+            });
+
+            if (!retryResponse.ok) {
+              throw new Error(`Failed to sync books: ${retryResponse.statusText}`);
+            }
+
+            const result = await retryResponse.json();
+            console.log('Books synced successfully:', result);
+            chrome.runtime.sendMessage({ 
+              type: 'SYNC_COMPLETE',
+              result
+            });
+            return;
+          }
+        } catch (refreshError) {
+          console.error('Error refreshing token:', refreshError);
+        }
+      }
       throw new Error(`Failed to sync books: ${response.statusText}`);
     }
 

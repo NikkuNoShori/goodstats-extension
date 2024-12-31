@@ -3,13 +3,22 @@ const DEV_MODE = false;
 const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.vercel.app';
 const GOODREADS_URL = 'https://www.goodreads.com';
 
-// Track states
+// Track states and session
+interface SessionInfo {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  email: string;
+}
+
 interface SyncState {
   goodstatsAuth: boolean;
   goodreadsAuth: boolean;
   goodreadsTabId: number | null;
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
   lastError: string | null;
+  session: SessionInfo | null;
 }
 
 let syncState: SyncState = {
@@ -17,24 +26,93 @@ let syncState: SyncState = {
   goodreadsAuth: false,
   goodreadsTabId: null,
   syncStatus: 'idle',
-  lastError: null
+  lastError: null,
+  session: null
 };
+
+// Listen for auth messages from the website
+window.addEventListener('message', async (event) => {
+  // Only accept messages from our website
+  if (!event.origin.includes(BASE_URL)) return;
+  
+  if (event.data.type === 'GOODSTATS_AUTH_STATUS') {
+    console.log('Received auth status:', event.data);
+    if (event.data.authenticated) {
+      syncState.goodstatsAuth = true;
+      syncState.session = {
+        accessToken: event.data.accessToken,
+        refreshToken: event.data.refreshToken,
+        expiresAt: event.data.expiresAt,
+        userId: event.data.userId,
+        email: event.data.email
+      };
+    } else {
+      syncState.goodstatsAuth = false;
+      syncState.session = null;
+    }
+    updateExtensionState();
+  }
+});
 
 // Check Goodstats authentication
 async function checkGoodstatsAuth(): Promise<boolean> {
   try {
-    console.log('Checking auth at:', `${BASE_URL}/api/auth/check`);
-    const response = await fetch(`${BASE_URL}/api/auth/check`, {
-      credentials: 'include' // Important for sending cookies
-    });
+    // If we have a valid session, use it
+    if (syncState.session && syncState.session.expiresAt > Date.now()) {
+      return true;
+    }
     
+    // If we have a refresh token, try to refresh the session
+    if (syncState.session?.refreshToken) {
+      try {
+        const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ refreshToken: syncState.session.refreshToken })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          syncState.session = {
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken,
+            expiresAt: data.expiresAt,
+            userId: data.userId,
+            email: data.email
+          };
+          syncState.goodstatsAuth = true;
+          return true;
+        }
+      } catch (error) {
+        console.error('Error refreshing token:', error);
+      }
+    }
+    
+    // Fall back to session check
+    const response = await fetch(`${BASE_URL}/api/auth/check`, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('Auth response:', data);
     syncState.goodstatsAuth = data.authenticated;
+    if (data.authenticated && data.session) {
+      syncState.session = {
+        accessToken: data.session.accessToken,
+        refreshToken: data.session.refreshToken,
+        expiresAt: data.session.expiresAt,
+        userId: data.session.userId,
+        email: data.session.email
+      };
+    }
     return syncState.goodstatsAuth;
   } catch (error) {
     console.error('Error checking Goodstats auth:', error);
