@@ -1,168 +1,182 @@
 // Content script for Goodreads page
 console.log('Content script loaded for:', window.location.hostname);
 
-// Function to check Goodreads login state
-function checkGoodreadsLogin() {
-  // Check for elements that indicate logged-in state on Goodreads
-  const signedInElements = document.querySelector('.siteHeader__personal');
-  const signOutLink = document.querySelector('a[href*="sign_out"]');
-  const userShelf = document.querySelector('.userShelf');
-  
-  const isLoggedIn = !!(signedInElements || signOutLink || userShelf);
-  console.log('Goodreads login check:', { 
-    isLoggedIn,
-    elements: {
-      header: !!signedInElements,
-      signOut: !!signOutLink,
-      shelf: !!userShelf
+// Function to safely send messages to the extension
+function safeSendMessage(message: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!chrome.runtime?.id) {
+        console.log('Extension context invalid, cannot send message');
+        reject(new Error('Extension context invalid'));
+        return;
+      }
+
+      chrome.runtime.sendMessage(message, response => {
+        if (chrome.runtime.lastError) {
+          console.log('Message send error:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      console.log('Error sending message:', error);
+      reject(error);
     }
   });
-  
-  return isLoggedIn;
 }
 
 // Function to send combined status update
-function sendStatusUpdate(goodstatsAuth: boolean, goodreadsData?: { isLoggedIn: boolean }) {
-  console.log('Sending combined status update:', {
-    goodstatsAuthenticated: goodstatsAuth,
-    goodreadsLoggedIn: goodreadsData?.isLoggedIn
-  });
-  
-  chrome.runtime.sendMessage({
-    type: 'STATUS_UPDATE',
-    data: {
-      goodstatsAuthenticated: goodstatsAuth,
-      goodreads: goodreadsData
-    }
-  }, response => {
-    console.log('Combined status update response:', response);
-  });
+async function sendStatusUpdate(state: {
+  status: 'checking' | 'authenticated' | 'unauthenticated',
+  goodstatsAuthenticated?: boolean,
+  goodreadsData?: { isLoggedIn: boolean }
+}) {
+  try {
+    console.log('Sending status update:', state);
+    
+    await safeSendMessage({
+      type: 'STATUS_UPDATE',
+      data: state
+    });
+  } catch (error) {
+    console.log('Failed to send status update:', error);
+  }
 }
 
 // Function to check auth status by looking for Supabase auth token
-function checkAuthStatus() {
+async function checkAuthStatus() {
   try {
     console.log('=== Starting Auth Check ===');
-    console.log('Current URL:', window.location.href);
     
-    // Log all localStorage keys for debugging
-    const allKeys = Object.keys(localStorage);
-    console.log('All localStorage keys:', allKeys);
+    // Send initial checking state
+    await sendStatusUpdate({ status: 'checking' });
     
     // Look for Supabase auth token in localStorage
-    const supabaseAuthKey = Object.keys(localStorage).find(key => key.startsWith('sb-') && key.endsWith('-auth-token'));
-    console.log('Found Supabase auth key:', supabaseAuthKey);
+    const supabaseAuthKey = Object.keys(localStorage).find(key => 
+      key.startsWith('sb-') && key.endsWith('-auth-token')
+    );
     
     if (!supabaseAuthKey) {
-      console.log('❌ No Supabase auth token found in localStorage');
-      sendStatusUpdate(false);
+      console.log('❌ No Supabase auth token found');
+      await sendStatusUpdate({ 
+        status: 'unauthenticated',
+        goodstatsAuthenticated: false 
+      });
       return;
     }
 
     // Parse the auth data
     const rawAuthData = localStorage.getItem(supabaseAuthKey);
-    console.log('Raw auth data exists:', !!rawAuthData);
-    
-    const authData = JSON.parse(rawAuthData || '{}');
-    console.log('Auth data parsed successfully:', {
-      hasAccessToken: !!authData.access_token,
-      accessTokenLength: authData.access_token?.length,
-      hasRefreshToken: !!authData.refresh_token,
-      expiresAt: new Date(authData.expires_at * 1000).toLocaleString(),
-      hasUser: !!authData.user,
-      userId: authData.user?.id,
-      email: authData.user?.email ? '✓ Present' : '✗ Missing'
-    });
-
-    if (authData.access_token && authData.user) {
-      console.log('✅ Valid auth data found, sending authenticated status');
-      sendStatusUpdate(true);
-      
-      // After confirming Goodstats auth, check Goodreads status
-      chrome.runtime.sendMessage({
-        type: 'CHECK_GOODREADS_STATUS'
-      }, response => {
-        console.log('Requested Goodreads status check:', response);
+    if (!rawAuthData) {
+      console.log('❌ Auth token exists but is empty');
+      await sendStatusUpdate({ 
+        status: 'unauthenticated',
+        goodstatsAuthenticated: false 
       });
-    } else {
-      console.log('❌ Auth data incomplete:', {
-        hasAccessToken: !!authData.access_token,
-        hasUser: !!authData.user
-      });
-      sendStatusUpdate(false);
+      return;
     }
-    console.log('=== Auth Check Complete ===');
-  } catch (error) {
-    console.error('❌ Error checking auth status:', error);
-    console.error('Error details:', {
-      name: error instanceof Error ? error.name : 'Unknown',
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : 'No stack trace'
+
+    const authData = JSON.parse(rawAuthData);
+    if (!authData.access_token || !authData.user) {
+      console.log('❌ Invalid auth data structure');
+      await sendStatusUpdate({ 
+        status: 'unauthenticated',
+        goodstatsAuthenticated: false 
+      });
+      return;
+    }
+
+    console.log('✅ Valid auth data found');
+    await sendStatusUpdate({ 
+      status: 'authenticated',
+      goodstatsAuthenticated: true 
     });
-    sendStatusUpdate(false);
+    
+    // After confirming auth, check Goodreads status
+    await safeSendMessage({ type: 'CHECK_GOODREADS_STATUS' });
+    
+  } catch (error) {
+    console.error('❌ Auth check failed:', error);
+    await sendStatusUpdate({ 
+      status: 'unauthenticated',
+      goodstatsAuthenticated: false 
+    });
   }
 }
 
-// Check auth status based on hostname
-if (window.location.hostname === 'goodstats.vercel.app') {
-  console.log('On Goodstats website, checking auth status');
-  
-  // Check immediately for existing login
-  checkAuthStatus();
-  
-  // Also check after a delay in case page is still loading
-  setTimeout(checkAuthStatus, 1000);
-  
-  // Watch for auth token changes in localStorage
-  window.addEventListener('storage', (e) => {
-    if (e.key?.startsWith('sb-') && e.key?.endsWith('-auth-token')) {
-      console.log('Auth token changed, rechecking status');
-      checkAuthStatus();
+// Initialize extension with retry logic
+async function initializeExtension(retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000;
+
+  try {
+    // Send initial checking state
+    await sendStatusUpdate({ status: 'checking' });
+
+    if (!chrome.runtime?.id) {
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Extension context invalid, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        setTimeout(() => initializeExtension(retryCount + 1), RETRY_DELAY);
+        return;
+      }
+      console.log('Max retries reached, extension initialization failed');
+      await sendStatusUpdate({ 
+        status: 'unauthenticated',
+        goodstatsAuthenticated: false 
+      });
+      return;
     }
-  });
-  
-  // Watch for localStorage changes in the same window
-  const originalSetItem = localStorage.setItem;
-  localStorage.setItem = function(key, value) {
-    originalSetItem.apply(this, [key, value]);
-    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-      console.log('Auth token updated in current window, rechecking status');
-      checkAuthStatus();
+
+    if (window.location.hostname === 'goodstats.vercel.app') {
+      console.log('Initializing extension on Goodstats');
+      
+      // Initial auth check
+      await checkAuthStatus();
+      
+      // Set up event listeners
+      window.addEventListener('storage', async (e) => {
+        if (e.key?.startsWith('sb-') && e.key?.endsWith('-auth-token')) {
+          await checkAuthStatus();
+        }
+      });
+      
+      // Watch for URL changes
+      let lastUrl = window.location.href;
+      new MutationObserver(async () => {
+        if (lastUrl !== window.location.href) {
+          lastUrl = window.location.href;
+          await checkAuthStatus();
+        }
+      }).observe(document, { subtree: true, childList: true });
+      
+      // Periodic check
+      setInterval(async () => {
+        if (chrome.runtime?.id) {
+          await checkAuthStatus();
+        }
+      }, 5000);
     }
-  };
-  
-  // Also check when URL changes
-  let lastUrl = window.location.href;
-  new MutationObserver(() => {
-    if (lastUrl !== window.location.href) {
-      lastUrl = window.location.href;
-      console.log('URL changed, checking auth status');
-      checkAuthStatus();
+  } catch (error) {
+    console.error('Initialization error:', error);
+    await sendStatusUpdate({ 
+      status: 'unauthenticated',
+      goodstatsAuthenticated: false 
+    });
+    if (retryCount < MAX_RETRIES) {
+      setTimeout(() => initializeExtension(retryCount + 1), RETRY_DELAY);
     }
-  }).observe(document, { subtree: true, childList: true });
-  
-  // Recheck periodically
-  setInterval(checkAuthStatus, 5000);
-} else if (window.location.hostname === 'www.goodreads.com') {
-  console.log('On Goodreads website, checking login status');
-  
-  // Check Goodreads login state periodically
-  const checkGoodreadsState = () => {
-    const isLoggedIn = checkGoodreadsLogin();
-    sendStatusUpdate(true, { isLoggedIn });
-  };
-  
-  // Initial check after page load
-  setTimeout(checkGoodreadsState, 1000);
-  
-  // Recheck periodically
-  setInterval(checkGoodreadsState, 5000);
-  
-  // Check when DOM changes
-  new MutationObserver(() => {
-    checkGoodreadsState();
-  }).observe(document.body, { subtree: true, childList: true });
+  }
 }
+
+// Start the extension with async/await
+(async () => {
+  try {
+    await initializeExtension();
+  } catch (error) {
+    console.error('Failed to start extension:', error);
+  }
+})();
 
 interface Book {
   title: string;
