@@ -23,7 +23,8 @@ let syncState: SyncState = {
 // Check Goodstats authentication
 async function checkGoodstatsAuth(): Promise<boolean> {
   try {
-    const response = await fetch(`${BASE_URL}/api/auth/status`, {
+    console.log('Checking auth at:', `${BASE_URL}/api/auth/check`);
+    const response = await fetch(`${BASE_URL}/api/auth/check`, {
       credentials: 'include' // Important for sending cookies
     });
     
@@ -32,6 +33,7 @@ async function checkGoodstatsAuth(): Promise<boolean> {
     }
 
     const data = await response.json();
+    console.log('Auth response:', data);
     syncState.goodstatsAuth = data.authenticated;
     return syncState.goodstatsAuth;
   } catch (error) {

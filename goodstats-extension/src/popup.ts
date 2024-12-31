@@ -2,6 +2,8 @@ interface SyncState {
   goodstatsAuth: boolean;
   goodreadsAuth: boolean;
   goodreadsTabId: number | null;
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  lastError: string | null;
 }
 
 // Get UI elements
@@ -10,9 +12,10 @@ const loginButton = document.getElementById('loginButton') as HTMLButtonElement;
 const syncButton = document.getElementById('syncButton') as HTMLButtonElement;
 
 // URLs
-const DEV_MODE = true;
+const DEV_MODE = false;
 const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.vercel.app';
 const SIGNIN_URL = `${BASE_URL}/signin`;
+console.log('Popup URLs:', { DEV_MODE, BASE_URL, SIGNIN_URL });
 
 // Update UI based on sync state
 function updateUI(state: SyncState) {
@@ -65,7 +68,50 @@ function updateUI(state: SyncState) {
     return;
   }
 
-  // Everything is ready
+  // Show sync status
+  if (state.syncStatus === 'syncing') {
+    statusContainer.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="status-icon syncing"></div>
+        <span>Syncing your books...</span>
+      </div>
+    `;
+    syncButton.style.display = 'block';
+    syncButton.disabled = true;
+    syncButton.textContent = 'Syncing...';
+    return;
+  }
+
+  if (state.syncStatus === 'error') {
+    statusContainer.innerHTML = `
+      <div class="error-container">
+        <div class="error-icon">!</div>
+        <div class="error-content">
+          <div class="error-title">Sync Failed</div>
+          <div class="error-message">${state.lastError || 'An error occurred while syncing'}</div>
+        </div>
+      </div>
+    `;
+    syncButton.style.display = 'block';
+    syncButton.disabled = false;
+    syncButton.textContent = 'Try Again';
+    return;
+  }
+
+  if (state.syncStatus === 'success') {
+    statusContainer.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="status-icon success"></div>
+        <span>Books synced successfully!</span>
+      </div>
+    `;
+    syncButton.style.display = 'block';
+    syncButton.disabled = false;
+    syncButton.textContent = 'Sync Again';
+    return;
+  }
+
+  // Default ready state
   statusContainer.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px;">
       <div class="status-icon success"></div>
@@ -73,11 +119,15 @@ function updateUI(state: SyncState) {
     </div>
   `;
   syncButton.style.display = 'block';
+  syncButton.disabled = false;
+  syncButton.textContent = 'Sync Books';
 }
 
 // Add button click handlers
 loginButton.addEventListener('click', () => {
+  console.log('Login button clicked, state:', syncState);
   if (!syncState.goodstatsAuth) {
+    console.log('Opening signin URL:', SIGNIN_URL);
     chrome.tabs.create({ url: SIGNIN_URL });
   } else {
     chrome.runtime.sendMessage({ type: 'ACTIVATE_GOODREADS' });
@@ -86,19 +136,15 @@ loginButton.addEventListener('click', () => {
 
 syncButton.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SYNC_BOOKS' });
-  syncButton.disabled = true;
-  syncButton.textContent = 'Syncing...';
-  setTimeout(() => {
-    syncButton.disabled = false;
-    syncButton.textContent = 'Sync Books';
-  }, 3000);
 });
 
 // Initialize state
 let syncState: SyncState = {
   goodstatsAuth: false,
   goodreadsAuth: false,
-  goodreadsTabId: null
+  goodreadsTabId: null,
+  syncStatus: 'idle',
+  lastError: null
 };
 
 // Listen for state updates from background script
