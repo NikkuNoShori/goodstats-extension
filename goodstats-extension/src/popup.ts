@@ -46,6 +46,9 @@ loginButton.addEventListener('click', () => {
   if (!syncState.goodstatsAuth) {
     console.log('Opening signin URL:', SIGNIN_URL);
     chrome.tabs.create({ url: SIGNIN_URL });
+  } else if (syncState.needsGoodreadsConnection) {
+    console.log('Opening connect Goodreads page');
+    chrome.tabs.create({ url: `${BASE_URL}/connect-goodreads` });
   } else {
     chrome.runtime.sendMessage({ type: 'ACTIVATE_GOODREADS' });
   }
