@@ -154,24 +154,37 @@ async function checkGoodreadsAuth(tabId: number): Promise<boolean> {
 
 // Update extension popup with current state
 function updateExtensionState() {
-  chrome.runtime.sendMessage({
-    type: 'SYNC_STATE_UPDATE',
-    state: syncState
+  console.log('Updating extension state:', syncState);
+  // Send to all tabs
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach(tab => {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'SYNC_STATE_UPDATE',
+          state: syncState
+        });
+      } catch (error) {
+        console.error('Error sending state update:', error);
+      }
+    });
   });
 }
 
 // Handle tab updates
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  console.log('Tab updated:', { tabId, changeInfo, tab });
   if (changeInfo.status !== 'complete') return;
 
   // Check Goodstats auth when on Goodstats pages
   if (tab.url?.includes(BASE_URL)) {
+    console.log('On Goodstats page, checking auth');
     await checkGoodstatsAuth();
     updateExtensionState();
   }
 
   // Check Goodreads auth when on Goodreads pages
   if (tab.url?.includes('goodreads.com')) {
+    console.log('On Goodreads page, checking auth');
     syncState.goodreadsTabId = tabId;
     await checkGoodreadsAuth(tabId);
     updateExtensionState();

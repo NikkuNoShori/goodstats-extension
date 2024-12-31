@@ -1,12 +1,65 @@
 // Content script for Goodreads page
 console.log('Content script loaded for:', window.location.hostname);
 
+// Function to extract auth data that will run in the page context
+function extractAuthData() {
+  const nextData = (window as any).__NEXT_DATA__;
+  if (!nextData?.props?.pageProps) return null;
+  
+  const { user, session } = nextData.props.pageProps;
+  return { user, session };
+}
+
+// Function to check auth status using chrome.scripting
+async function checkAuthStatus() {
+  try {
+    // Get the current tab
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentTab = tabs[0];
+    
+    if (!currentTab.id) return;
+    
+    // Execute the script in the page context
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: currentTab.id },
+      func: extractAuthData
+    });
+    
+    const data = results[0].result;
+    console.log('Extracted auth data:', data);
+    
+    if (data?.user && data?.session) {
+      chrome.runtime.sendMessage({
+        type: 'GOODSTATS_AUTH_UPDATE',
+        data: {
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: true,
+          ...data.session,
+          userId: data.user.id,
+          email: data.user.email
+        }
+      });
+    } else {
+      chrome.runtime.sendMessage({
+        type: 'GOODSTATS_AUTH_UPDATE',
+        data: {
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: false
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error checking auth status:', error);
+  }
+}
+
 // Listen for auth messages from the website
 window.addEventListener('message', (event) => {
   // Only accept messages from our website
   if (!event.origin.includes('goodstats.vercel.app')) return;
   
-  console.log('Content script received message:', event.data);
+  // Filter out React DevTools messages
+  if (event.data.source?.includes('react-devtools')) return;
   
   if (event.data.type === 'GOODSTATS_AUTH_STATUS') {
     console.log('Content script received auth status:', event.data);
@@ -18,42 +71,22 @@ window.addEventListener('message', (event) => {
   }
 });
 
-// If we're on Goodstats, inject a script to trigger auth status check
+// If we're on Goodstats, check auth status
 if (window.location.hostname === 'goodstats.vercel.app') {
   console.log('On Goodstats website, checking auth status');
-  // Create and inject the script
-  const script = document.createElement('script');
-  script.textContent = `
-    // Function to send auth status
-    function sendAuthStatus() {
-      const user = window.__NEXT_DATA__?.props?.pageProps?.user;
-      const session = window.__NEXT_DATA__?.props?.pageProps?.session;
-      
-      console.log('Checking auth status:', { user, session });
-      
-      if (user && session) {
-        window.postMessage({
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: true,
-          ...session,
-          userId: user.id,
-          email: user.email
-        }, '*');
-      } else {
-        window.postMessage({
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: false
-        }, '*');
-      }
+  
+  // Check immediately
+  checkAuthStatus();
+  
+  // Also check when URL changes (for client-side navigation)
+  let lastUrl = window.location.href;
+  new MutationObserver(() => {
+    if (lastUrl !== window.location.href) {
+      lastUrl = window.location.href;
+      console.log('URL changed, checking auth status');
+      checkAuthStatus();
     }
-
-    // Send status immediately
-    sendAuthStatus();
-
-    // Also send status when route changes
-    window.addEventListener('routeChangeComplete', sendAuthStatus);
-  `;
-  (document.head || document.documentElement).appendChild(script);
+  }).observe(document, { subtree: true, childList: true });
 }
 
 interface Book {

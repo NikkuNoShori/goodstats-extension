@@ -15,7 +15,61 @@ const syncButton = document.getElementById('syncButton') as HTMLButtonElement;
 const DEV_MODE = false;
 const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.vercel.app';
 const SIGNIN_URL = `${BASE_URL}/signin`;
-console.log('Popup URLs:', { DEV_MODE, BASE_URL, SIGNIN_URL });
+console.log('Popup initialized with URLs:', { DEV_MODE, BASE_URL, SIGNIN_URL });
+
+// Initialize state
+let syncState: SyncState = {
+  goodstatsAuth: false,
+  goodreadsAuth: false,
+  goodreadsTabId: null,
+  syncStatus: 'idle',
+  lastError: null
+};
+
+// Listen for state updates from background script
+chrome.runtime.onMessage.addListener((message) => {
+  console.log('Popup received message:', message);
+  if (message.type === 'SYNC_STATE_UPDATE') {
+    console.log('Updating popup state:', message.state);
+    syncState = message.state;
+    updateUI(syncState);
+  }
+});
+
+// Add button click handlers
+loginButton.addEventListener('click', () => {
+  console.log('Login button clicked, current state:', syncState);
+  if (!syncState.goodstatsAuth) {
+    console.log('Opening signin URL:', SIGNIN_URL);
+    chrome.tabs.create({ url: SIGNIN_URL });
+  } else {
+    chrome.runtime.sendMessage({ type: 'ACTIVATE_GOODREADS' });
+  }
+});
+
+syncButton.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'SYNC_BOOKS' });
+});
+
+// Request initial state
+console.log('Requesting initial state');
+chrome.runtime.sendMessage({ type: 'CHECK_AUTH_STATUS' });
+
+// Also request state update when popup opens
+function checkState() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const currentTab = tabs[0];
+    console.log('Current tab:', currentTab);
+    // If we're on Goodstats, force a state refresh
+    if (currentTab.url?.includes('goodstats.vercel.app')) {
+      console.log('On Goodstats page, refreshing tab to trigger auth check');
+      chrome.tabs.reload(currentTab.id!);
+    }
+  });
+}
+
+// Check state when popup opens
+checkState();
 
 // Update UI based on sync state
 function updateUI(state: SyncState) {
@@ -122,40 +176,5 @@ function updateUI(state: SyncState) {
   syncButton.disabled = false;
   syncButton.textContent = 'Sync Books';
 }
-
-// Add button click handlers
-loginButton.addEventListener('click', () => {
-  console.log('Login button clicked, state:', syncState);
-  if (!syncState.goodstatsAuth) {
-    console.log('Opening signin URL:', SIGNIN_URL);
-    chrome.tabs.create({ url: SIGNIN_URL });
-  } else {
-    chrome.runtime.sendMessage({ type: 'ACTIVATE_GOODREADS' });
-  }
-});
-
-syncButton.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'SYNC_BOOKS' });
-});
-
-// Initialize state
-let syncState: SyncState = {
-  goodstatsAuth: false,
-  goodreadsAuth: false,
-  goodreadsTabId: null,
-  syncStatus: 'idle',
-  lastError: null
-};
-
-// Listen for state updates from background script
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'SYNC_STATE_UPDATE') {
-    syncState = message.state;
-    updateUI(syncState);
-  }
-});
-
-// Request initial state
-chrome.runtime.sendMessage({ type: 'CHECK_AUTH_STATUS' });
 
 export {}; 
