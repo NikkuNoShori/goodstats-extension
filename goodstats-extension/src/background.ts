@@ -1,5 +1,5 @@
 // Background script
-const DEV_MODE = true;
+const DEV_MODE = false;
 const BASE_URL = DEV_MODE ? 'http://localhost:5173' : 'https://goodstats.vercel.app';
 const GOODREADS_URL = 'https://www.goodreads.com';
 
@@ -8,12 +8,16 @@ interface SyncState {
   goodstatsAuth: boolean;
   goodreadsAuth: boolean;
   goodreadsTabId: number | null;
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error';
+  lastError: string | null;
 }
 
 let syncState: SyncState = {
   goodstatsAuth: false,
   goodreadsAuth: false,
-  goodreadsTabId: null
+  goodreadsTabId: null,
+  syncStatus: 'idle',
+  lastError: null
 };
 
 // Check Goodstats authentication
@@ -94,10 +98,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'SYNC_BOOKS' && syncState.goodreadsTabId) {
+    syncState.syncStatus = 'syncing';
+    syncState.lastError = null;
+    updateExtensionState();
+    
     chrome.tabs.sendMessage(syncState.goodreadsTabId, { 
       type: 'START_SYNC',
       goodstatsUrl: BASE_URL
     });
+  }
+
+  if (message.type === 'SYNC_COMPLETE') {
+    syncState.syncStatus = 'success';
+    updateExtensionState();
+  }
+
+  if (message.type === 'SYNC_ERROR') {
+    syncState.syncStatus = 'error';
+    syncState.lastError = message.error;
+    updateExtensionState();
   }
 
   if (message.type === 'ACTIVATE_GOODREADS') {
