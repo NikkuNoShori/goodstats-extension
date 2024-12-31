@@ -1,6 +1,3 @@
-# Create .gitignore file
-New-Item .gitignore
-
 # Dependencies
 /node_modules
 /.pnp

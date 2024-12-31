@@ -1,18 +1,28 @@
-import React from 'react';
-import { 
-  Container, Box, Typography, Grid, Paper, Stack,
-  Button, useTheme, alpha 
-} from '@mui/material';
 import {
   AutoStories,
   QueryStats,
   Timeline,
   PieChart,
   TrendingUp,
-  MenuBook
+  MenuBook,
 } from '@mui/icons-material';
-import { AppTheme } from '../theme/types';
+import {
+  Container,
+  Box,
+  Typography,
+  Grid,
+  Paper,
+  Stack,
+  Button,
+  useTheme,
+  alpha,
+} from '@mui/material';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
+
+import { AppTheme } from '../theme/types';
+import { usePageTitle } from '../utils/usePageTitle';
+import Header from './common/Header';
 
 const FeatureCard: React.FC<{
   icon: React.ReactNode;
@@ -20,7 +30,7 @@ const FeatureCard: React.FC<{
   description: string;
 }> = ({ icon, title, description }) => {
   const theme = useTheme<AppTheme>();
-  
+
   return (
     <Paper
       sx={{
@@ -34,7 +44,7 @@ const FeatureCard: React.FC<{
         transition: 'transform 0.2s ease-in-out',
         '&:hover': {
           transform: 'translateY(-4px)',
-        }
+        },
       }}
     >
       <Stack spacing={2}>
@@ -46,7 +56,8 @@ const FeatureCard: React.FC<{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: (theme) => `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+            background: theme =>
+              `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
           }}
         >
           {icon}
@@ -63,6 +74,7 @@ const FeatureCard: React.FC<{
 };
 
 const LandingPage: React.FC = () => {
+  usePageTitle('GoodStats - Track Your Reading Journey');
   const theme = useTheme<AppTheme>();
   const navigate = useNavigate();
 
@@ -71,7 +83,8 @@ const LandingPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh' }}>
+    <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
+      <Header isLandingPage title="GoodStats" />
       {/* Hero Section */}
       <Box
         sx={{
@@ -97,7 +110,8 @@ const LandingPage: React.FC = () => {
                   Track Your Reading Journey
                 </Typography>
                 <Typography variant="h5" color="text.secondary" sx={{ maxWidth: 500 }}>
-                  Transform your Goodreads library into beautiful insights and discover patterns in your reading habits.
+                  Transform your Goodreads library into beautiful insights and discover patterns in
+                  your reading habits.
                 </Typography>
                 <Box>
                   <Button
@@ -134,12 +148,7 @@ const LandingPage: React.FC = () => {
 
       {/* Features Section */}
       <Container sx={{ py: { xs: 8, md: 12 } }}>
-        <Typography
-          variant="h3"
-          textAlign="center"
-          fontWeight="bold"
-          sx={{ mb: 8 }}
-        >
+        <Typography variant="h3" textAlign="center" fontWeight="bold" sx={{ mb: 8 }}>
           Features
         </Typography>
         <Grid container spacing={4}>
@@ -191,4 +200,4 @@ const LandingPage: React.FC = () => {
   );
 };
 
-export default LandingPage; 
+export default LandingPage;
