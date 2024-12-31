@@ -1,57 +1,50 @@
 // Content script for Goodreads page
 console.log('Content script loaded for:', window.location.hostname);
 
-// Function to extract auth data that will run in the page context
-function extractAuthData() {
-  const nextData = (window as any).__NEXT_DATA__;
-  if (!nextData?.props?.pageProps) return null;
-  
-  const { user, session } = nextData.props.pageProps;
-  return { user, session };
-}
-
-// Function to check auth status using chrome.scripting
-async function checkAuthStatus() {
+// Function to check auth status
+function checkAuthStatus() {
   try {
-    // Get the current tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentTab = tabs[0];
-    
-    if (!currentTab.id) return;
-    
-    // Execute the script in the page context
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: currentTab.id },
-      func: extractAuthData
-    });
-    
-    const data = results[0].result;
-    console.log('Extracted auth data:', data);
-    
-    if (data?.user && data?.session) {
-      chrome.runtime.sendMessage({
-        type: 'GOODSTATS_AUTH_UPDATE',
-        data: {
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: true,
-          ...data.session,
-          userId: data.user.id,
-          email: data.user.email
-        }
-      });
-    } else {
-      chrome.runtime.sendMessage({
-        type: 'GOODSTATS_AUTH_UPDATE',
-        data: {
-          type: 'GOODSTATS_AUTH_STATUS',
-          authenticated: false
-        }
-      });
-    }
+    // Access Next.js data directly from the page
+    const script = document.createElement('script');
+    script.textContent = `
+      const authData = window.__NEXT_DATA__?.props?.pageProps;
+      window.dispatchEvent(new CustomEvent('GOODSTATS_AUTH_CHECK', { 
+        detail: { user: authData?.user, session: authData?.session }
+      }));
+    `;
+    script.onload = () => script.remove();
+    document.documentElement.appendChild(script);
   } catch (error) {
-    console.error('Error checking auth status:', error);
+    console.error('Error injecting auth check script:', error);
   }
 }
+
+// Listen for auth check results
+window.addEventListener('GOODSTATS_AUTH_CHECK', ((event: CustomEvent) => {
+  const { user, session } = event.detail;
+  console.log('Auth check results:', { user, session });
+  
+  if (user && session) {
+    chrome.runtime.sendMessage({
+      type: 'GOODSTATS_AUTH_UPDATE',
+      data: {
+        type: 'GOODSTATS_AUTH_STATUS',
+        authenticated: true,
+        ...session,
+        userId: user.id,
+        email: user.email
+      }
+    });
+  } else {
+    chrome.runtime.sendMessage({
+      type: 'GOODSTATS_AUTH_UPDATE',
+      data: {
+        type: 'GOODSTATS_AUTH_STATUS',
+        authenticated: false
+      }
+    });
+  }
+}) as EventListener);
 
 // Listen for auth messages from the website
 window.addEventListener('message', (event) => {
@@ -75,8 +68,13 @@ window.addEventListener('message', (event) => {
 if (window.location.hostname === 'goodstats.vercel.app') {
   console.log('On Goodstats website, checking auth status');
   
-  // Check immediately
-  checkAuthStatus();
+  // Wait for Next.js to load
+  const checkForNextData = setInterval(() => {
+    if ((window as any).__NEXT_DATA__) {
+      clearInterval(checkForNextData);
+      checkAuthStatus();
+    }
+  }, 100);
   
   // Also check when URL changes (for client-side navigation)
   let lastUrl = window.location.href;
