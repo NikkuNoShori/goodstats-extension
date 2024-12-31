@@ -214,6 +214,7 @@ const Dashboard = () => {
       <Header 
         title="Dashboard" 
         subtitle="Track your reading progress and insights"
+        data-testid="user-dashboard"
       />
       
       {emailPending && (
@@ -237,6 +238,7 @@ const Dashboard = () => {
             maxWidth: 1000,
             mx: 'auto'
           }}
+          data-testid="connect-goodreads"
         >
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
@@ -323,12 +325,13 @@ const Dashboard = () => {
           </Grid>
         </Paper>
       ) : (
-        <Box sx={{ mb: 4, textAlign: 'right' }}>
+        <Box sx={{ mb: 4, textAlign: 'right' }} data-testid="user-profile-section">
           <Button
             variant="outlined"
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
             startIcon={<AutoStories />}
+            data-testid="sync-books-button"
             sx={{
               py: 1.5,
               px: 3,
@@ -363,7 +366,7 @@ const Dashboard = () => {
 
       {/* Show BookList only when connected */}
       {profile?.goodreads_username && (
-        <Grid container spacing={2} sx={{ mt: 2 }}>
+        <Grid container spacing={2} sx={{ mt: 2 }} data-testid="user-book-list">
           <Grid item xs={12}>
             <BookList 
               books={storedBooks || []} 

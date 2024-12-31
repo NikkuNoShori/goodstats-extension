@@ -19,6 +19,10 @@ interface SyncState {
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
   lastError: string | null;
   session: SessionInfo | null;
+  hasGoodreadsConnection?: boolean;
+  needsGoodreadsConnection?: boolean;
+  canSyncBooks?: boolean;
+  hasBooks?: boolean;
 }
 
 let syncState: SyncState = {
@@ -27,7 +31,11 @@ let syncState: SyncState = {
   goodreadsTabId: null,
   syncStatus: 'idle',
   lastError: null,
-  session: null
+  session: null,
+  hasGoodreadsConnection: false,
+  needsGoodreadsConnection: false,
+  canSyncBooks: false,
+  hasBooks: false
 };
 
 // Listen for messages from popup or content scripts
@@ -40,16 +48,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Background received auth update:', message.data);
     if (message.data.authenticated) {
       syncState.goodstatsAuth = true;
-      syncState.session = {
-        accessToken: message.data.accessToken,
-        refreshToken: message.data.refreshToken,
-        expiresAt: message.data.expiresAt,
-        userId: message.data.userId,
-        email: message.data.email
-      };
+      syncState.hasGoodreadsConnection = message.data.hasGoodreadsConnection;
+      syncState.needsGoodreadsConnection = message.data.needsGoodreadsConnection;
+      syncState.canSyncBooks = message.data.canSyncBooks;
+      syncState.hasBooks = message.data.hasBooks;
     } else {
       syncState.goodstatsAuth = false;
       syncState.session = null;
+      syncState.hasGoodreadsConnection = false;
+      syncState.needsGoodreadsConnection = false;
+      syncState.canSyncBooks = false;
+      syncState.hasBooks = false;
     }
     updateExtensionState();
   }

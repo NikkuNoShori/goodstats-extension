@@ -1,80 +1,58 @@
 // Content script for Goodreads page
 console.log('Content script loaded for:', window.location.hostname);
 
-// Function to check auth status
+// Function to check auth status by looking for user-specific elements
 function checkAuthStatus() {
   try {
-    // Access Next.js data directly from the page
-    const script = document.createElement('script');
-    script.textContent = `
-      const authData = window.__NEXT_DATA__?.props?.pageProps;
-      window.dispatchEvent(new CustomEvent('GOODSTATS_AUTH_CHECK', { 
-        detail: { user: authData?.user, session: authData?.session }
-      }));
-    `;
-    script.onload = () => script.remove();
-    document.documentElement.appendChild(script);
+    // Look for elements that indicate auth state
+    const userDashboard = document.querySelector('[data-testid="user-dashboard"]');
+    const userProfileSection = document.querySelector('[data-testid="user-profile-section"]');
+    const connectGoodreads = document.querySelector('[data-testid="connect-goodreads"]');
+    const syncBooksButton = document.querySelector('[data-testid="sync-books-button"]');
+    const userBookList = document.querySelector('[data-testid="user-book-list"]');
+    
+    // If dashboard exists, user is logged in
+    const isLoggedIn = !!userDashboard;
+    console.log('Auth check by DOM:', { 
+      isLoggedIn,
+      hasProfile: !!userProfileSection,
+      needsGoodreads: !!connectGoodreads,
+      canSync: !!syncBooksButton,
+      hasBooks: !!userBookList
+    });
+    
+    if (isLoggedIn) {
+      chrome.runtime.sendMessage({
+        type: 'GOODSTATS_AUTH_UPDATE',
+        data: {
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: true,
+          hasGoodreadsConnection: !!userProfileSection,
+          needsGoodreadsConnection: !!connectGoodreads,
+          canSyncBooks: !!syncBooksButton,
+          hasBooks: !!userBookList
+        }
+      });
+    } else {
+      chrome.runtime.sendMessage({
+        type: 'GOODSTATS_AUTH_UPDATE',
+        data: {
+          type: 'GOODSTATS_AUTH_STATUS',
+          authenticated: false
+        }
+      });
+    }
   } catch (error) {
-    console.error('Error injecting auth check script:', error);
+    console.error('Error checking auth status:', error);
   }
 }
-
-// Listen for auth check results
-window.addEventListener('GOODSTATS_AUTH_CHECK', ((event: CustomEvent) => {
-  const { user, session } = event.detail;
-  console.log('Auth check results:', { user, session });
-  
-  if (user && session) {
-    chrome.runtime.sendMessage({
-      type: 'GOODSTATS_AUTH_UPDATE',
-      data: {
-        type: 'GOODSTATS_AUTH_STATUS',
-        authenticated: true,
-        ...session,
-        userId: user.id,
-        email: user.email
-      }
-    });
-  } else {
-    chrome.runtime.sendMessage({
-      type: 'GOODSTATS_AUTH_UPDATE',
-      data: {
-        type: 'GOODSTATS_AUTH_STATUS',
-        authenticated: false
-      }
-    });
-  }
-}) as EventListener);
-
-// Listen for auth messages from the website
-window.addEventListener('message', (event) => {
-  // Only accept messages from our website
-  if (!event.origin.includes('goodstats.vercel.app')) return;
-  
-  // Filter out React DevTools messages
-  if (event.data.source?.includes('react-devtools')) return;
-  
-  if (event.data.type === 'GOODSTATS_AUTH_STATUS') {
-    console.log('Content script received auth status:', event.data);
-    // Forward the message to background script
-    chrome.runtime.sendMessage({
-      type: 'GOODSTATS_AUTH_UPDATE',
-      data: event.data
-    });
-  }
-});
 
 // If we're on Goodstats, check auth status
 if (window.location.hostname === 'goodstats.vercel.app') {
   console.log('On Goodstats website, checking auth status');
   
-  // Wait for Next.js to load
-  const checkForNextData = setInterval(() => {
-    if ((window as any).__NEXT_DATA__) {
-      clearInterval(checkForNextData);
-      checkAuthStatus();
-    }
-  }, 100);
+  // Initial check after a short delay to let the page load
+  setTimeout(checkAuthStatus, 1000);
   
   // Also check when URL changes (for client-side navigation)
   let lastUrl = window.location.href;
@@ -82,7 +60,7 @@ if (window.location.hostname === 'goodstats.vercel.app') {
     if (lastUrl !== window.location.href) {
       lastUrl = window.location.href;
       console.log('URL changed, checking auth status');
-      checkAuthStatus();
+      setTimeout(checkAuthStatus, 1000);
     }
   }).observe(document, { subtree: true, childList: true });
 }

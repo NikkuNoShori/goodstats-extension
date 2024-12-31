@@ -4,6 +4,10 @@ interface SyncState {
   goodreadsTabId: number | null;
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
   lastError: string | null;
+  hasGoodreadsConnection?: boolean;
+  needsGoodreadsConnection?: boolean;
+  canSyncBooks?: boolean;
+  hasBooks?: boolean;
 }
 
 // Get UI elements
@@ -90,6 +94,33 @@ function updateUI(state: SyncState) {
     `;
     loginButton.style.display = 'block';
     loginButton.textContent = 'Login to Goodstats';
+    return;
+  }
+
+  if (state.needsGoodreadsConnection) {
+    // Needs to connect Goodreads account
+    statusContainer.innerHTML = `
+      <div class="error-container">
+        <div class="error-icon">!</div>
+        <div class="error-content">
+          <div class="error-title">Connect Goodreads</div>
+          <div class="error-message">Please connect your Goodreads account to continue</div>
+        </div>
+      </div>
+    `;
+    loginButton.style.display = 'block';
+    loginButton.textContent = 'Connect Goodreads';
+    return;
+  }
+
+  if (!state.hasGoodreadsConnection) {
+    // Waiting for Goodreads connection to complete
+    statusContainer.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="status-icon syncing"></div>
+        <span>Connecting to Goodreads...</span>
+      </div>
+    `;
     return;
   }
 
